@@ -598,14 +598,6 @@ angular.module('copayApp.services')
         return cb(gettext('Could not import. Check input file and spending password'));
       }
 
-      if (walletClient.hasPrivKeyEncrypted()) {
-        try {
-          walletClient.disablePrivateKeyEncryption();
-        } catch (e) {
-          $log.warn(e);
-        }
-      }
-
       str = JSON.parse(str);
 
       if (!str.n) {
@@ -795,7 +787,7 @@ angular.module('copayApp.services')
     root.getNotifications = function(opts, cb) {
       opts = opts || {};
 
-      var TIME_STAMP = 60 * 60 * 24 * 7;
+      var TIME_STAMP = 60 * 60 * 6;
       var MAX = 100;
 
       var typeFilter = {
@@ -861,26 +853,25 @@ angular.module('copayApp.services')
 
         var finale = shown; // GROUPING DISABLED!
 
-        // var finale = [],
-        // prev;
-        //
-        //
-        // // Item grouping... DISABLED.
-        //
-        // // REMOVE (if we want 1-to-1 notification) ????
-        // lodash.each(shown, function(x) {
-        //   if (prev && prev.walletId === x.walletId && prev.txpId && prev.txpId === x.txpId && prev.creatorId && prev.creatorId === x.creatorId) {
-        //     prev.types.push(x.type);
-        //     prev.data = lodash.assign(prev.data, x.data);
-        //     prev.txid = prev.txid || x.txid;
-        //     prev.amountStr = prev.amountStr || x.amountStr;
-        //     prev.creatorName = prev.creatorName || x.creatorName;
-        //   } else {
-        //     finale.push(x);
-        //     prev = x;
-        //   }
-        // });
-        //
+        var finale = [],
+          prev;
+
+
+        // Item grouping... DISABLED.
+
+        // REMOVE (if we want 1-to-1 notification) ????
+        lodash.each(shown, function(x) {
+          if (prev && prev.walletId === x.walletId && prev.txpId && prev.txpId === x.txpId && prev.creatorId && prev.creatorId === x.creatorId) {
+            prev.types.push(x.type);
+            prev.data = lodash.assign(prev.data, x.data);
+            prev.txid = prev.txid || x.txid;
+            prev.amountStr = prev.amountStr || x.amountStr;
+            prev.creatorName = prev.creatorName || x.creatorName;
+          } else {
+            finale.push(x);
+            prev = x;
+          }
+        });
 
         var u = bwcService.getUtils();
         lodash.each(finale, function(x) {

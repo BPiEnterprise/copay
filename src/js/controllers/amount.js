@@ -1,30 +1,32 @@
 'use strict';
 
-angular.module('copayApp.controllers').controller('amountController', function($rootScope, $scope, $filter, $timeout, $ionicScrollDelegate, gettextCatalog, platformInfo, lodash, configService, rateService, $stateParams, $window, $state, $log, txFormatService, ongoingProcess, bitpayCardService, popupService, bwcError, payproService) {
-
+angular.module('copayApp.controllers').controller('amountController', function($scope, $filter, $timeout, $ionicScrollDelegate, $ionicHistory, $ionicPopover, gettextCatalog, platformInfo, lodash, configService, rateService, $stateParams, $window, $state, $log, txFormatService, ongoingProcess, bitpayCardService, popupService, bwcError, payproService, profileService, bitcore, amazonService) {
   var unitToSatoshi;
   var satToUnit;
   var unitDecimals;
   var satToBtc;
-  var self = $scope.self;
   var SMALL_FONT_SIZE_LIMIT = 10;
   var LENGTH_EXPRESSION_LIMIT = 19;
+  var MENU_ITEM_HEIGHT = 55;
 
   $scope.$on('$ionicView.leave', function() {
     angular.element($window).off('keydown');
   });
 
   $scope.$on("$ionicView.beforeEnter", function(event, data) {
-
+    $scope.isGiftCard = data.stateParams.isGiftCard;
+    $scope.showMenu = $ionicHistory.backView().stateName == 'tabs.send';
     $scope.isWallet = data.stateParams.isWallet;
     $scope.cardId = data.stateParams.cardId;
     $scope.toAddress = data.stateParams.toAddress;
     $scope.toName = data.stateParams.toName;
     $scope.toEmail = data.stateParams.toEmail;
-    $scope.showAlternativeAmount = !!$scope.cardId;
+    $scope.showAlternativeAmount = !!$scope.cardId || !!$scope.isGiftCard;
     $scope.toColor = data.stateParams.toColor;
 
-    if (!$scope.cardId && !$stateParams.toAddress) {
+    $scope.customAmount = data.stateParams.customAmount;
+
+    if (!$scope.cardId && !$scope.isGiftCard && !data.stateParams.toAddress) {
       $log.error('Bad params at amount')
       throw ('bad params');
     }
@@ -49,8 +51,7 @@ angular.module('copayApp.controllers').controller('amountController', function($
 
       $timeout(function() {
         $scope.$apply();
-      }, 10);
-
+      });
     });
 
     var config = configService.getSync().wallet.settings;
@@ -76,6 +77,35 @@ angular.module('copayApp.controllers').controller('amountController', function($
       $ionicScrollDelegate.resize();
     }, 10);
   });
+
+  $scope.showSendMaxMenu = function($event) {
+    var sendMaxObj = {
+      text: gettextCatalog.getString('Send max amount'),
+      action: setSendMax,
+    };
+
+    $scope.items = [sendMaxObj];
+    $scope.height = $scope.items.length * MENU_ITEM_HEIGHT;
+
+    $ionicPopover.fromTemplateUrl('views/includes/menu-popover.html', {
+      scope: $scope
+    }).then(function(popover) {
+      $scope.menu = popover;
+      $scope.menu.show($event);
+    });
+  };
+
+  function setSendMax() {
+    $scope.menu.hide();
+    $state.transitionTo('tabs.send.confirm', {
+      isWallet: $scope.isWallet,
+      toAmount: null,
+      toAddress: $scope.toAddress,
+      toName: $scope.toName,
+      toEmail: $scope.toEmail,
+      useSendMax: true,
+    });
+  };
 
   $scope.toggleAlternative = function() {
     $scope.showAlternativeAmount = !$scope.showAlternativeAmount;
@@ -121,7 +151,6 @@ angular.module('copayApp.controllers').controller('amountController', function($
 
   function isExpression(val) {
     var regex = /^\.?\d+(\.?\d+)?([\/\-\+\*x]\d?\.?\d+)+$/;
-
     return regex.test(val);
   };
 
@@ -134,7 +163,6 @@ angular.module('copayApp.controllers').controller('amountController', function($
   $scope.resetAmount = function() {
     $scope.amount = $scope.alternativeResult = $scope.amountResult = $scope.globalResult = '';
     $scope.allowSend = false;
-
     checkFontSize();
   };
 
@@ -199,6 +227,7 @@ angular.module('copayApp.controllers').controller('amountController', function($
         amount: amountUSD,
         currency: 'USD'
       };
+
       ongoingProcess.set('Preparing transaction...', true);
       $timeout(function() {
 
@@ -238,15 +267,80 @@ angular.module('copayApp.controllers').controller('amountController', function($
         });
       });
 
-    } else {
-      var amount = $scope.showAlternativeAmount ? fromFiat(_amount).toFixed(unitDecimals) : _amount.toFixed(unitDecimals);
-      $state.transitionTo('tabs.send.confirm', {
-        isWallet: $scope.isWallet,
-        toAmount: amount * unitToSatoshi,
-        toAddress: $scope.toAddress,
-        toName: $scope.toName,
-        toEmail: $scope.toEmail
+    } else if ($scope.isGiftCard) {
+      ongoingProcess.set('Preparing transaction...', true);
+      // Get first wallet as UUID
+      var uuid;
+      try {
+        uuid = profileService.getWallets({
+          onlyComplete: true,
+          network: 'livenet',
+        })[0].id;
+      } catch (err) {
+        ongoingProcess.set('Preparing transaction...', false);
+        popupService.showAlert(gettextCatalog.getString('Error'), gettextCatalog.getString('No wallet found!'));
+        return;
+      };
+      var amountUSD = $scope.showAlternativeAmount ? _amount : $filter('formatFiatAmount')(toFiat(_amount));
+      var dataSrc = {
+        currency: 'USD',
+        amount: amountUSD,
+        uuid: uuid
+      };
+
+      amazonService.createBitPayInvoice(dataSrc, function(err, dataInvoice) {
+        if (err) {
+          ongoingProcess.set('Preparing transaction...', false);
+          popupService.showAlert(gettextCatalog.getString('Error'), bwcError.msg(err));
+          return;
+        }
+
+        amazonService.getBitPayInvoice(dataInvoice.invoiceId, function(err, invoice) {
+          if (err) {
+            ongoingProcess.set('Preparing transaction...', false);
+            popupService.showAlert(gettextCatalog.getString('Error'), bwcError.msg(err));
+            return;
+          }
+
+          var payProUrl = invoice.paymentUrls.BIP73;
+
+          payproService.getPayProDetails(payProUrl, function(err, payProDetails) {
+            ongoingProcess.set('Preparing transaction...', false);
+            if (err) {
+              popupService.showAlert(gettextCatalog.getString('Error'), bwcError.msg(err));
+              return;
+            }
+            var stateParams = {
+              giftCardAmountUSD: amountUSD,
+              giftCardAccessKey: dataInvoice.accessKey,
+              giftCardInvoiceTime: invoice.invoiceTime,
+              giftCardUUID: dataSrc.uuid,
+              toAmount: payProDetails.amount,
+              toAddress: payProDetails.toAddress,
+              description: payProDetails.memo,
+              paypro: payProDetails
+            };
+
+            $state.transitionTo('tabs.giftcards.amazon.confirm', stateParams);
+          }, true);
+        });
       });
+    } else {
+      var amount = $scope.showAlternativeAmount ? fromFiat(_amount) : _amount;
+      if ($scope.customAmount) {
+        $state.transitionTo('tabs.receive.customAmount', {
+          toAmount: (amount * unitToSatoshi).toFixed(0),
+          toAddress: $scope.toAddress
+        });
+      } else {
+        $state.transitionTo('tabs.send.confirm', {
+          isWallet: $scope.isWallet,
+          toAmount: (amount * unitToSatoshi).toFixed(0),
+          toAddress: $scope.toAddress,
+          toName: $scope.toName,
+          toEmail: $scope.toEmail
+        });
+      }
     }
   };
 });

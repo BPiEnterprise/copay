@@ -63,7 +63,9 @@ angular.module('copayApp.controllers').controller('bitpayCardController', functi
 
       if (err) {
         $log.error(err);
-        $scope.error = gettextCatalog.getString('Could not get transactions');
+        self.bitpayCardTransactionHistory = null;
+        self.bitpayCardCurrentBalance = null;
+        popupService.showAlert(gettextCatalog.getString('Error'), gettextCatalog.getString('Could not get transactions'));
         return;
       }
 
@@ -144,6 +146,12 @@ angular.module('copayApp.controllers').controller('bitpayCardController', functi
     } else {
       updateHistoryFromCache(function() {
         self.update();
+      });
+      bitpayCardService.getBitpayDebitCards(function(err, cards) {
+        if (err) return;
+        $scope.card = lodash.find(cards, function(card) {
+          return card.eid == $scope.cardId;
+        });
       });
     }
   });

@@ -1,6 +1,6 @@
 'use strict';
 
-angular.module('copayApp.controllers').controller('walletDetailsController', function($scope, $rootScope, $interval, $timeout, $filter, $log, $ionicModal, $ionicPopover, $state, $stateParams, profileService, lodash, configService, gettextCatalog, platformInfo, walletService, txpModalService, externalLinkService, popupService, addressbookService) {
+angular.module('copayApp.controllers').controller('walletDetailsController', function($scope, $rootScope, $interval, $timeout, $filter, $log, $ionicModal, $ionicPopover, $state, $stateParams, $ionicHistory, profileService, lodash, configService, gettextCatalog, platformInfo, walletService, txpModalService, externalLinkService, popupService, addressbookService, storageService, $ionicScrollDelegate, $window) {
 
   var HISTORY_SHOW_LIMIT = 10;
   var currentTxHistoryPage = 0;
@@ -10,6 +10,9 @@ angular.module('copayApp.controllers').controller('walletDetailsController', fun
   $scope.openTxpModal = txpModalService.open;
   $scope.isCordova = platformInfo.isCordova;
   $scope.isAndroid = platformInfo.isAndroid;
+  $scope.isIOS = platformInfo.isIOS;
+
+  $scope.amountIsCollapsible = !$scope.isAndroid;
 
   $scope.openExternalLink = function(url, target) {
     externalLinkService.open(url, target);
@@ -46,7 +49,7 @@ angular.module('copayApp.controllers').controller('walletDetailsController', fun
 
   var updateStatus = function(force) {
     $scope.updatingStatus = true;
-    $scope.updateStatusError = false;
+    $scope.updateStatusError = null;
     $scope.walletNotRegistered = false;
 
     walletService.getStatus($scope.wallet, {
@@ -57,18 +60,16 @@ angular.module('copayApp.controllers').controller('walletDetailsController', fun
         if (err === 'WALLET_NOT_REGISTERED') {
           $scope.walletNotRegistered = true;
         } else {
-          $scope.updateStatusError = true;
+          $scope.updateStatusError = err;
         }
         $scope.status = null;
-        return;
+      } else {
+        setPendingTxps(status.pendingTxps);
+        $scope.status = status;
       }
-
-      setPendingTxps(status.pendingTxps);
-
-      $scope.status = status;
       $timeout(function() {
         $scope.$apply();
-      }, 1);
+      });
 
     });
   };
@@ -87,6 +88,14 @@ angular.module('copayApp.controllers').controller('walletDetailsController', fun
     $scope.close = function() {
       $scope.searchModal.hide();
     };
+
+    $scope.openTx = function(tx) {
+      $ionicHistory.nextViewOptions({
+        disableAnimate: true
+      });
+      $scope.searchModal.hide();
+      $scope.openTxModal(tx);
+    };
   };
 
   $scope.openTxModal = function(btx) {
@@ -103,6 +112,7 @@ angular.module('copayApp.controllers').controller('walletDetailsController', fun
       if (err) return;
       $timeout(function() {
         walletService.startScan($scope.wallet, function() {
+          $scope.updateAll();
           $scope.$apply();
         });
       });
@@ -151,6 +161,52 @@ angular.module('copayApp.controllers').controller('walletDetailsController', fun
     }
   };
 
+  $scope.getDate = function(txCreated) {
+    var date = new Date(txCreated * 1000);
+    return date;
+  };
+
+  $scope.isFirstInGroup = function(index) {
+    if (index === 0) {
+      return true;
+    }
+    var curTx = $scope.txHistory[index];
+    var prevTx = $scope.txHistory[index - 1];
+    return !createdDuringSameMonth(curTx, prevTx);
+  };
+
+  $scope.isLastInGroup = function(index) {
+    if (index === $scope.txHistory.length - 1) {
+      return true;
+    }
+    return $scope.isFirstInGroup(index + 1);
+  };
+
+  function createdDuringSameMonth(tx1, tx2) {
+    var date1 = new Date(tx1.time * 1000);
+    var date2 = new Date(tx2.time * 1000);
+    return getMonthYear(date1) === getMonthYear(date2);
+  }
+
+  $scope.createdWithinPastDay = function(time) {
+    var now = new Date();
+    var date = new Date(time * 1000);
+    return (now.getTime() - date.getTime()) < (1000 * 60 * 60 * 24);
+  };
+
+  $scope.isDateInCurrentMonth = function(date) {
+    var now = new Date();
+    return getMonthYear(now) === getMonthYear(date);
+  };
+
+  function getMonthYear(date) {
+    return date.getMonth() + date.getFullYear();
+  }
+
+  $scope.isUnconfirmed = function(tx) {
+    return !tx.confirmations || tx.confirmations === 0;
+  };
+
   $scope.showMore = function() {
     $timeout(function() {
       currentTxHistoryPage++;
@@ -177,9 +233,73 @@ angular.module('copayApp.controllers').controller('walletDetailsController', fun
     });
   };
 
-  $scope.$on("$ionicView.beforeEnter", function(event, data) {
+  var prevPos;
+  var screenInactive = true;
 
-    $scope.wallet = profileService.getWallet(data.stateParams.walletId);
+  function getScrollPosition() {
+    var scrollPosition = $ionicScrollDelegate.getScrollPosition();
+    if (!scrollPosition || screenInactive) {
+      $window.requestAnimationFrame(function() {
+        getScrollPosition();
+      });
+      return;
+    }
+    var pos = scrollPosition.top;
+    if (pos === prevPos) {
+      $window.requestAnimationFrame(function() {
+        getScrollPosition();
+      });
+      return;
+    }
+    prevPos = pos;
+    var amountHeight = 180 - pos;
+    if (amountHeight < 80) {
+      amountHeight = 80;
+    }
+    var contentMargin = amountHeight;
+    if (contentMargin > 180) {
+      contentMargin = 180;
+    }
+
+    var amountScale = (amountHeight / 180);
+    if (amountScale < 0.5) {
+      amountScale = 0.5;
+    }
+    if (amountScale > 1.1) {
+      amountScale = 1.1;
+    }
+
+    var s = amountScale;
+
+    $scope.altAmountOpacity = (amountHeight - 100) / 80;
+    $window.requestAnimationFrame(function() {
+      $scope.amountHeight = amountHeight + 'px';
+      $scope.contentMargin = contentMargin + 'px';
+      $scope.amountScale = 'scale3d(' + s + ',' + s + ',' + s + ')';
+      $scope.$digest();
+      getScrollPosition();
+    });
+  }
+
+  var scrollWatcherInitialized;
+
+  $scope.$on("$ionicView.enter", function(event, data) {
+    setAndroidStatusBarColor();
+    $timeout(function() {
+      screenInactive = false;
+    }, 200);
+    if (scrollWatcherInitialized || !$scope.amountIsCollapsible) {
+      return;
+    }
+    scrollWatcherInitialized = true;
+    $timeout(function() {
+      getScrollPosition();
+    }, 100);
+  });
+
+  $scope.$on("$ionicView.beforeEnter", function(event, data) {
+    $scope.walletId = data.stateParams.walletId;
+    $scope.wallet = profileService.getWallet($scope.walletId);
     $scope.requiresMultipleSignatures = $scope.wallet.credentials.m > 1;
 
     addressbookService.list(function(err, ab) {
@@ -201,9 +321,58 @@ angular.module('copayApp.controllers').controller('walletDetailsController', fun
     ];
   });
 
+  $scope.$on("$ionicView.beforeLeave", function(event, data) {
+    if($window.StatusBar) {
+      $window.StatusBar.backgroundColorByHexString('#1e3186');
+    }
+  });
+
   $scope.$on("$ionicView.leave", function(event, data) {
+    screenInactive = true;
     lodash.each(listeners, function(x) {
       x();
     });
   });
+
+  function setAndroidStatusBarColor() {
+    var SUBTRACT_AMOUNT = 15;
+    if(!$scope.isAndroid) {
+      return;
+    }
+    var rgb = hexToRgb($scope.wallet.color);
+    var keys = Object.keys(rgb);
+    keys.forEach(function(k) {
+      if(rgb[k] - SUBTRACT_AMOUNT < 0) {
+        rgb[k] = 0;
+      } else {
+        rgb[k] -= SUBTRACT_AMOUNT;
+      }
+    });
+    var statusBarColorHexString = rgbToHex(rgb.r, rgb.g, rgb.b);
+    $window.StatusBar.backgroundColorByHexString(statusBarColorHexString);
+  }
+
+  function hexToRgb(hex) {
+    // Expand shorthand form (e.g. "03F") to full form (e.g. "0033FF")
+    var shorthandRegex = /^#?([a-f\d])([a-f\d])([a-f\d])$/i;
+    hex = hex.replace(shorthandRegex, function(m, r, g, b) {
+      return r + r + g + g + b + b;
+    });
+
+    var result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+    return result ? {
+      r: parseInt(result[1], 16),
+      g: parseInt(result[2], 16),
+      b: parseInt(result[3], 16)
+    } : null;
+  }
+
+  function componentToHex(c) {
+    var hex = c.toString(16);
+    return hex.length == 1 ? "0" + hex : hex;
+  }
+
+  function rgbToHex(r, g, b) {
+    return "#" + componentToHex(r) + componentToHex(g) + componentToHex(b);
+  }
 });
