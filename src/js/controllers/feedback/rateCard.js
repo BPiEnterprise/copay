@@ -1,11 +1,12 @@
 'use strict';
 
-angular.module('copayApp.controllers').controller('rateCardController', function($scope, $state, $timeout, gettextCatalog, platformInfo, storageService) {
+angular.module('copayApp.controllers').controller('rateCardController', function($scope, $state, $timeout, $log, gettextCatalog, platformInfo, storageService) {
 
   $scope.isCordova = platformInfo.isCordova;
   $scope.score = 0;
 
   $scope.goFeedbackFlow = function() {
+    $scope.hideCard();
     if ($scope.isCordova && $scope.score == 5) {
       $state.go('tabs.rate.rateApp', {
         score: $scope.score
@@ -42,6 +43,7 @@ angular.module('copayApp.controllers').controller('rateCardController', function
   };
 
   $scope.hideCard = function() {
+    $log.debug('Feedback card dismissed.')
     storageService.getFeedbackInfo(function(error, info) {
       var feedbackInfo = JSON.parse(info);
       feedbackInfo.sent = true;

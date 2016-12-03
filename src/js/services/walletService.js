@@ -312,7 +312,7 @@ angular.module('copayApp.services').factory('walletService', function($log, $tim
         return tx.txid != endingTxid;
       });
 
-      return cb(null, res, res.length == limit);
+      return cb(null, res, res.length >= limit);
     });
   };
 
@@ -403,7 +403,16 @@ angular.module('copayApp.services').factory('walletService', function($log, $tim
 
       function getNewTxs(newTxs, skip, cb) {
         getTxsFromServer(wallet, skip, endingTxid, requestLimit, function(err, res, shouldContinue) {
-          if (err) return cb(err);
+          if (err) {
+            $log.warn('BWS Error:' + err); //TODO
+            if (err instanceof errors.CONNECTION_ERROR || (err.message && err.message.match(/5../))) {
+              log.info('Retrying history download in 5 secs...');
+              return $timeout(function() {
+                return getNewTxs(newTxs, skip, cb);
+              }, 5000);
+            };
+            return cb(err);
+          }
 
           newTxs = newTxs.concat(processNewTxs(wallet, lodash.compact(res)));
 
@@ -562,20 +571,13 @@ angular.module('copayApp.services').factory('walletService', function($log, $tim
     if (lodash.isEmpty(txp) || lodash.isEmpty(wallet))
       return cb('MISSING_PARAMETER');
 
-    if (txp.sendMax) {
-      wallet.createTxProposal(txp, function(err, createdTxp) {
-        if (err) return cb(err);
-        else return cb(null, createdTxp);
-      });
-    } else {
-      wallet.createTxProposal(txp, function(err, createdTxp) {
-        if (err) return cb(err);
-        else {
-          $log.debug('Transaction created');
-          return cb(null, createdTxp);
-        }
-      });
-    }
+    wallet.createTxProposal(txp, function(err, createdTxp) {
+      if (err) return cb(err);
+      else {
+        $log.debug('Transaction created');
+        return cb(null, createdTxp);
+      }
+    });
   };
 
   root.publishTx = function(wallet, txp, cb) {
@@ -770,6 +772,21 @@ angular.module('copayApp.services').factory('walletService', function($log, $tim
         return bwcError.cb(err, prefix, cb);
       }
       return cb(null, addr.address);
+    });
+  };
+
+  root.getMainAddresses = function(wallet, opts, cb) {
+    opts = opts || {};
+    opts.reverse = true;
+    wallet.getMainAddresses(opts, function(err, addresses) {
+      return cb(err, addresses);
+    });
+  };
+
+  root.getBalance = function(wallet, opts, cb) {
+    opts = opts || {};
+    wallet.getBalance(opts, function(err, resp) {
+      return cb(err, resp);
     });
   };
 
@@ -1068,6 +1085,12 @@ angular.module('copayApp.services').factory('walletService', function($log, $tim
     return type;
   };
 
+  root.getSendMaxInfo = function(wallet, opts, cb) {
+    opts = opts || {};
+    wallet.getSendMaxInfo(opts, function(err, res) {
+      return cb(err, res);
+    });
+  };
 
   return root;
 });

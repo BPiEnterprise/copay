@@ -2,24 +2,25 @@
 
 angular.module('copayApp.controllers').controller('sendController', function($scope, $state, $log, $timeout, $stateParams, $ionicNavBarDelegate, $ionicHistory, $ionicConfig, $window, gettextCatalog, popupService, configService, lodash, feedbackService, ongoingProcess) {
 
-  $scope.sendFeedback = function(feedback, skip) {
+  $scope.sendFeedback = function(feedback, goHome) {
 
     var config = configService.getSync();
 
     var dataSrc = {
       "Email": lodash.values(config.emailFor)[0] || ' ',
-      "Feedback": skip ? ' ' : feedback,
+      "Feedback": goHome ? ' ' : feedback,
       "Score": $stateParams.score || ' ',
       "AppVersion": $window.version,
       "Platform": ionic.Platform.platform(),
       "DeviceVersion": ionic.Platform.version()
     };
 
-    ongoingProcess.set('sendingFeedback', true);
+    if (!goHome) ongoingProcess.set('sendingFeedback', true);
     feedbackService.send(dataSrc, function(err) {
+      if (goHome) return;
       ongoingProcess.set('sendingFeedback', false);
       if (err) {
-        popupService.showAlert(gettextCatalog.getString('Error'), gettextCatalog.getString('Could not send feedback'));
+        popupService.showAlert(gettextCatalog.getString('Error'), gettextCatalog.getString('Feedback could not be submitted. Please try again later.'));
         return;
       }
       if (!$stateParams.score) {
@@ -30,14 +31,14 @@ angular.module('copayApp.controllers').controller('sendController', function($sc
             historyRoot: true
           });
           $ionicHistory.goBack();
-        });
+        }, gettextCatalog.getString('Finish'));
         return;
       }
       $state.go('tabs.rate.complete', {
-        score: $stateParams.score,
-        skipped: skip
+        score: $stateParams.score
       });
     });
+    if (goHome) $state.go('tabs.home');
   };
 
   $scope.$on("$ionicView.beforeEnter", function(event, data) {
@@ -45,13 +46,12 @@ angular.module('copayApp.controllers').controller('sendController', function($sc
     $scope.feedback = {};
 
     if ($scope.score) {
-      $ionicNavBarDelegate.showBackButton(false);
       $ionicConfig.views.swipeBackEnabled(false);
-    } else $ionicNavBarDelegate.showBackButton(true);
+    }
 
     switch ($scope.score) {
       case 1:
-        $scope.reaction = gettextCatalog.getString("Ouch!");
+        $scope.reaction = "Ouch!";
         $scope.comment = gettextCatalog.getString("There's obviously something we're doing wrong.") + ' ' + gettextCatalog.getString("How could we improve your experience?");
         break;
       case 2:
@@ -59,7 +59,7 @@ angular.module('copayApp.controllers').controller('sendController', function($sc
         $scope.comment = gettextCatalog.getString("There's obviously something we're doing wrong.") + ' ' + gettextCatalog.getString("How could we improve your experience?");
         break;
       case 3:
-        $scope.reaction = gettextCatalog.getString("Hmm...");
+        $scope.reaction = "Hmm...";
         $scope.comment = gettextCatalog.getString("We'd love to do better.") + ' ' + gettextCatalog.getString("How could we improve your experience?");
         break;
       case 4:
@@ -71,7 +71,7 @@ angular.module('copayApp.controllers').controller('sendController', function($sc
         $scope.comment = gettextCatalog.getString("We're always looking for ways to improve BitPay.") + ' ' + gettextCatalog.getString("Is there anything we could do better?");
         break;
       default:
-        $scope.reaction = gettextCatalog.getString("Feedback!");
+        $scope.justFeedback = true;
         $scope.comment = gettextCatalog.getString("We're always looking for ways to improve BitPay. How could we improve your experience?");
         break;
     }
@@ -80,5 +80,13 @@ angular.module('copayApp.controllers').controller('sendController', function($sc
   $scope.$on("$ionicView.afterEnter", function() {
     $scope.showForm = true;
   });
+
+  $scope.goBack = function() {
+    $ionicHistory.nextViewOptions({
+      disableAnimate: false,
+      historyRoot: true
+    });
+    $ionicHistory.goBack();
+  };
 
 });

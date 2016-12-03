@@ -25,7 +25,7 @@ angular.module('copayApp.services').factory('ongoingProcess', function($log, $ti
     'recreating': gettext('Recreating Wallet...'),
     'rejectTx': gettext('Rejecting payment proposal'),
     'removeTx': gettext('Deleting payment proposal'),
-    'retrivingInputs': gettext('Retrieving inputs information'),
+    'retrievingInputs': gettext('Retrieving inputs information'),
     'scanning': gettext('Scanning Wallet funds...'),
     'sendingTx': gettext('Sending transaction'),
     'signingTx': gettext('Signing transaction'),
@@ -34,6 +34,9 @@ angular.module('copayApp.services').factory('ongoingProcess', function($log, $ti
     'validatingWords': gettext('Validating recovery phrase...'),
     'loadingTxInfo': gettext('Loading transaction info...'),
     'sendingFeedback': gettext('Sending feedback...'),
+    'generatingNewAddress': gettext('Generating new address...'),
+    'gettingAddresses': gettext('Getting addresses...'),
+    'sendingByEmail': gettext('Preparing addresses...'),
   };
 
   root.clear = function() {

@@ -2,42 +2,62 @@
 
 angular.module('copayApp.controllers').controller('completeController', function($scope, $stateParams, $timeout, $log, $ionicHistory, $state, $ionicNavBarDelegate, $ionicConfig, platformInfo, configService, storageService, lodash) {
   $scope.isCordova = platformInfo.isCordova;
-  var config = configService.getSync();
+  var defaults = configService.getDefaults();
+
+  function quickFeedback(cb) {
+    window.plugins.spinnerDialog.show();
+    $timeout(window.plugins.spinnerDialog.hide, 300);
+    $timeout(cb, 20);
+  }
 
   $scope.shareFacebook = function() {
-    window.plugins.socialsharing.shareVia($scope.shareFacebookVia, null, null, null, config.download.url);
+    quickFeedback(function() {
+      window.plugins.socialsharing.shareVia($scope.shareFacebookVia, null, null, null, defaults.download.url);
+    });
   };
 
   $scope.shareTwitter = function() {
-    window.plugins.socialsharing.shareVia($scope.shareTwitterVia, null, null, null, config.download.url);
+    quickFeedback(function() {
+      window.plugins.socialsharing.shareVia($scope.shareTwitterVia, null, null, null, defaults.download.url);
+    });
   };
 
   $scope.shareGooglePlus = function() {
-    window.plugins.socialsharing.shareVia($scope.shareGooglePlusVia, config.download.url);
+    quickFeedback(function() {
+      window.plugins.socialsharing.shareVia($scope.shareGooglePlusVia, defaults.download.url);
+    });
   };
 
   $scope.shareEmail = function() {
-    window.plugins.socialsharing.shareViaEmail(config.download.url);
+    quickFeedback(function() {
+      window.plugins.socialsharing.shareViaEmail(defaults.download.url);
+    });
   };
 
   $scope.shareWhatsapp = function() {
-    window.plugins.socialsharing.shareViaWhatsApp(config.download.url);
+    quickFeedback(function() {
+      window.plugins.socialsharing.shareViaWhatsApp(defaults.download.url);
+    });
   };
 
   $scope.shareMessage = function() {
-    window.plugins.socialsharing.shareViaSMS(config.download.url);
+    quickFeedback(function() {
+      window.plugins.socialsharing.shareViaSMS(defaults.download.url);
+    });
   };
 
   $scope.$on("$ionicView.beforeEnter", function(event, data) {
-
     $scope.score = (data.stateParams && data.stateParams.score) ? parseInt(data.stateParams.score) : null;
     $scope.skipped = (data.stateParams && data.stateParams.skipped) ? true : false;
+    $scope.rated = (data.stateParams && data.stateParams.rated) ? true : false;
     $scope.fromSettings = (data.stateParams && data.stateParams.fromSettings) ? true : false;
 
     if (!$scope.fromSettings) {
-      $ionicNavBarDelegate.showBackButton(false);
       $ionicConfig.views.swipeBackEnabled(false);
-    } else $ionicNavBarDelegate.showBackButton(true);
+    } else {
+      $ionicNavBarDelegate.showBackButton(true);
+      $ionicConfig.views.swipeBackEnabled(true);
+    }
 
     storageService.getFeedbackInfo(function(error, info) {
       var feedbackInfo = lodash.isString(info) ? JSON.parse(info) : null;
@@ -46,6 +66,7 @@ angular.module('copayApp.controllers').controller('completeController', function
     });
 
     if (!$scope.isCordova) return;
+    $scope.animate = true;
 
     window.plugins.socialsharing.available(function(isAvailable) {
       // the boolean is only false on iOS < 6
